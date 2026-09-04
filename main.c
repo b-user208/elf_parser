@@ -190,42 +190,45 @@ int main(int argc, char *argv[]){
         printf("Nombre d'arguments insufissants.\n");
         return EXIT_FAILURE;
     }
-    FILE *fp = fopen(argv[1], "rb");
-    if(!fp){
-        perror("fopen");
-        return EXIT_FAILURE;
-    }
+    FILE *fp;
+    Elf64_Ehdr *header;
+    char *name,*strtab, i = 1;
     unsigned nb_symb = 0;
 
-    Elf64_Ehdr *header = elf_header(fp);
-    if(!header){ fclose(fp); return EXIT_FAILURE; }
+    while((argc - 1) > 0){
+        fp = fopen(argv[i], "rb");
+        if(!fp){ perror("fopen"); goto error;}
 
-    char *name = section_headers(fp);
-    if(!name){ fclose(fp); return EXIT_FAILURE; }
+        header = elf_header(fp);
+        if(!header){ fclose(fp); goto error; }
 
-    char *strtab = symb(fp);
-    if(!strtab){ fclose(fp); return EXIT_FAILURE; }
+        name = section_headers(fp);
+        if(!name){ fclose(fp); goto error; }
 
-    printf("Magic   : ");
-    for(unsigned char i = 0; i < 8; i++){
-        printf("%02X ", header->e_ident[i]);
-    }
-    printf("\n");
-    printf("Type    : %s\n", gettype(header->e_type));
-    printf("Machine : %s\n", getmachine(header->e_machine));
-    printf("Entry   : 0x%lX\n", header->e_entry);
-    for(unsigned i = 0; i < header->e_shnum; i++){
-        printf("%-4u = %-30s %-20s off=0x%-10lX size=0x%lX\n", i, &name[sections[i].sh_name], getshtype(sections[i].sh_type), sections[i].sh_offset, sections[i].sh_size);
-    }
-    for(unsigned i = 0; i < header->e_shnum; i++){
-        if(sections[i].sh_type == SHT_SYMTAB){
-            nb_symb = sections[i].sh_size / sections[i].sh_entsize;
-            break;
+        strtab = symb(fp);
+        if(!strtab){ goto strtab; }
+        printf("Magic   : ");
+        for(unsigned char i = 0; i < 8; i++){ printf("%02X ", header->e_ident[i]);}
+        printf("\n");
+        printf("Type    : %s\n", gettype(header->e_type));
+        printf("Machine : %s\n", getmachine(header->e_machine));
+        printf("Entry   : 0x%lX\n", header->e_entry);
+        for(unsigned i = 0; i < header->e_shnum; i++){
+            printf("%-4u = %-30s %-20s off=0x%-10lX size=0x%lX\n", 
+                i, &name[sections[i].sh_name], 
+                getshtype(sections[i].sh_type), 
+                sections[i].sh_offset, 
+                sections[i].sh_size);
         }
-    }
-    printf("\nSymboles\n");
-    for(unsigned i = 0; i < nb_symb; i++){
-        printf("%-4u = %-40s %-10s %-10s %-20s 0x%-10lX size=0x%lX\n", 
+        for(unsigned i = 0; i < header->e_shnum; i++){
+            if(sections[i].sh_type == SHT_SYMTAB){
+                nb_symb = sections[i].sh_size / sections[i].sh_entsize;
+                break;
+            }
+        }
+        printf("\nSymboles\n");
+        for(unsigned i = 0; i < nb_symb; i++){
+            printf("%-4u = %-40s %-10s %-10s %-20s 0x%-10lX size=0x%lX\n", 
                 i, 
                 &strtab[symboles[i].st_name], 
                 getstbinding(ELF64_ST_BIND(symboles[i].st_info)), 
@@ -235,12 +238,17 @@ int main(int argc, char *argv[]){
                 (symboles[i].st_shndx == 0xfff2) ? "COMMON":
                 &name[sections[symboles[i].st_shndx].sh_name],
                 symboles[i].st_value, symboles[i].st_size);
+        }
+            free(symboles);
+            free(strtab);
+            strtab :
+            free(sections);
+            free(name);
+            fclose(fp);
+            error :
+            argc--;
+            i++;
+        printf("\n\n");
     }
-
-    free(symboles);
-    free(sections);
-    free(name);
-    free(strtab);
-    fclose(fp);
     return 0;
 }
